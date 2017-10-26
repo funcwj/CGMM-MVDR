@@ -129,10 +129,10 @@ class CGMMTrainer(object):
         self.noisy_part.update_parameters(spectrums, stats)
 
     def train(self, spectrums, iters=30):
-        print('Likelihood: {:.4}'.format(self.log_likelihood(spectrums)))
+        print('Likelihood: ({0.real:.5f}, {0.imag:.5f}i)'.format(self.log_likelihood(spectrums)))
         for it in range(1, iters + 1):
             stats = self.accu_stats(spectrums)
             self.update_parameters(spectrums, stats)
-            print('epoch {:2d}: Likelihood = {:.4}'.format(it, \
+            print('epoch {0:2d}: Likelihood = ({1.real:.5f}, {1.imag:.5f}i)'.format(it, \
                     self.log_likelihood(spectrums)))
 

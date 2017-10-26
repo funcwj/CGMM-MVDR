@@ -16,6 +16,12 @@ def get_fft_size(num_samples):
     return int(fft_size)
 
 def get_frame_info(frame_rate, window_size, frame_offset):
+    """
+        Returns frame_size and frame_offset, given the paramters:
+            frame_rate:     sample rate of original wave
+            window_size:    time length of each frame(ms)
+            frame_offset:   time offset of each frame(ms)
+    """
     samples_per_ms = frame_rate / 1000
     frame_size  = int(window_size * samples_per_ms)
     offset_size = int(frame_offset * samples_per_ms)
@@ -28,6 +34,13 @@ def pre_emphase(signal, filter_coeff=0.97):
     return signal
 
 def compute_spectrum(wave_wrapper, window_type='hamming'):
+    """
+        Compute the DFT of each frames in the wrapper:
+        1. default apply hamming-window on each frame
+        2. calculate the real-fft results of each frame
+        NOTE:   real-fft returns a complex vector of size N + 1, 
+                N equals half of frame_size, egs: T x W => T x (W / 2 + 1)    
+    """
     frames = wave_wrapper.subframes()
     num_frames, frame_size = frames.shape
     assert window_type in ['hamming', 'hanning']
@@ -44,7 +57,7 @@ def compute_spectrum(wave_wrapper, window_type='hamming'):
 
 def plot_spectrum(spectrum, frame_duration, title="samples.wav"):
     """
-        visilize the spectrum, now adds only time info along
+        Visilize the spectrum, now only adds time info along
         x-axis without frequency info along y-axis
     """
     num_frames, num_bins = spectrum.shape
@@ -62,6 +75,10 @@ def plot_spectrum(spectrum, frame_duration, title="samples.wav"):
     
 
 def write_wave(samples, frame_rate, dest):
+    """
+        Dumps wave samples to a file, with default config:
+        1 channel, 2 bit per sample
+    """
     dest_wave = wave.open(dest, "wb")
     # 1 channel; int16 default
     dest_wave.setparams((1, 2, frame_rate, samples.size, 'NONE', 'not compressed'))
@@ -73,6 +90,10 @@ def write_wave(samples, frame_rate, dest):
 
 def reconstruct_wave(spectrum, dest, frame_rate=16000, window_size=25, 
                     frame_offset=10, filter_coeff=0.97):
+    """
+        Reconstruct wave samples from the spectrum, using overlapadd and post-filter
+        The spectrum is obtained by rfft, so apply irfft to restore the orignal signal.
+    """
     num_frames, num_bins = spectrum.shape
     frame_size, offset_size = get_frame_info(frame_rate, window_size, frame_offset)
     num_samples = int((num_frames - 1) * offset_size + frame_size)
@@ -89,6 +110,9 @@ def reconstruct_wave(spectrum, dest, frame_rate=16000, window_size=25,
 
 
 class WaveWrapper(object):
+    """
+        A wrapper for a single wave file, maintaining some basic infomation
+    """
     def __init__(self, path, window_size=25, frame_offset=10):
         src_wave = wave.open(path, "rb")
         self.wave_path = path
@@ -101,6 +125,9 @@ class WaveWrapper(object):
         src_wave.close() 
     
     def subframes(self, normalize=True):
+        """
+            Convert the samples to several frames
+        """
         assert self.sample_bits == 2
         samples = np.fromstring(self.byte_data, dtype=np.int16)
         frames  = np.zeros([self.num_frames, self.frame_size])
@@ -125,6 +152,9 @@ def check_status(data_list):
     return shape
 
 class MultiChannelWrapper(object):
+    """
+        Wrapper to handle multiple channels/wave
+    """
     def __init__(self, script):
         with open(script, "r") as scp:
             scp_list = [line.strip() for line in scp if line.strip]

@@ -1,4 +1,6 @@
 *.pyc
-data/*.pyc
 *.log
+*.scp
+data/*.pyc
 __pycache__/
+6ch/

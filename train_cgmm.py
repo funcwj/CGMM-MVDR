@@ -18,7 +18,10 @@ def train(args):
 if __name__ == '__main__':
     parser = argparse.ArgumentParser(description="Training CGMM on multiple channel")
     parser.add_argument('descriptor', type=str,
-                        help="""descriptor of multiple channel location""")
+                        help="""descriptor of multiple channel location, format:
+                                /path/to/channel1
+                                ...
+                                /path/to/channeln""")
     parser.add_argument('-i', '--iters',
                         dest='iters', type=int, default='10',
                         help="""number of iterations to train""")

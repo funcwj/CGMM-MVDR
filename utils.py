@@ -1,4 +1,4 @@
-#!/usr/bin/env python
+#!/isr/bin/env python
 # coding=utf-8
 # wujian@17.10.24
 
@@ -33,7 +33,7 @@ def pre_emphase(signal, filter_coeff=0.97):
     signal[0] -= filter_coeff * signal[0]
     return signal
 
-def compute_spectrum(wave_wrapper, window_type='hamming'):
+def compute_spectrum(wave_wrapper, transpose=False, window_type='hamming'):
     """
         Compute the DFT of each frames in the wrapper:
         1. default apply hamming-window on each frame
@@ -53,7 +53,7 @@ def compute_spectrum(wave_wrapper, window_type='hamming'):
     for index in range(num_frames):
         feature_in[: frame_size] = frames[index] * window 
         spectrum[index] = np.fft.rfft(feature_in)
-    return spectrum
+    return spectrum if not transpose else np.transpose(spectrum)
 
 def plot_spectrum(spectrum, frame_duration, title="samples.wav"):
     """
@@ -82,7 +82,7 @@ def write_wave(samples, frame_rate, dest):
     dest_wave = wave.open(dest, "wb")
     # 1 channel; int16 default
     dest_wave.setparams((1, 2, frame_rate, samples.size, 'NONE', 'not compressed'))
-    dest_wave.writeframes(samples.astype(np.int16))
+    dest_wave.writeframes(samples.astype(np.int16).tostring())
     print("1 channels; 2 bytes per sample; {num_samples} samples; " \
             "{frame_rate} samples per sec. OUT[{path}]".format(path=dest, \
             num_samples=samples.size, frame_rate=frame_rate))
@@ -166,9 +166,9 @@ class MultiChannelWrapper(object):
         return shape_per_item, frames
     
     def spectrums(self, transpose=False):
-        spects = [compute_spectrum(wrapper) for wrapper in self.wrappers]
+        spects = [compute_spectrum(wrapper, transpose) for wrapper in self.wrappers]
         shape_per_item = check_status(spects)
-        return shape_per_item, (spects if not transpose else np.transpose(spects))
+        return shape_per_item, spects
     
     def __str__(self):
         return '\n'.join([str(wrapper) for wrapper in self.wrappers])

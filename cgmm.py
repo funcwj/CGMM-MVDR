@@ -3,6 +3,7 @@
 # wujian@17.10.25
 
 import math
+import os
 import numpy as np
 
 LOG_PI = math.log(math.pi)
@@ -45,76 +46,90 @@ class CGMM(object):
         # lambda, phi, R for noisy/noise part
         self.lambda_ = np.random.rand(num_bins, time_steps).astype(np.complex)
         self.phi     = np.ones([num_bins, time_steps]).astype(np.complex)
-        # type matrix
-        self.R       = [np.matrix(np.eye(num_channels, num_channels).astype(np.complex)) \
-                            for i in range(num_bins)] 
-    
+
+    def init_sigma(self, sigma):
+        """
+            Inputs: sigma is a np.matrix list 
+            Keeps \sigma^{-1} and det(\sigma), \sigma equals \mean(y^H * y)
+        """
+        assert type(sigma) == list
+        self.sigma_inv = [mat.I for mat in sigma]
+        self.sigma_det = [np.linalg.det(mat) for mat in sigma]
+        
     def check_inputs(self, inputs):
         num_bins, time_steps, num_channels = inputs.shape
         assert num_bins == self.num_bins and time_steps == self.time_steps \
-            and num_channels == self.dim, 'inputs dim does not match CGMM config'
+            and num_channels == self.dim, 'Inputs dim does not match CGMM config'
 
     def log_likelihood(self, spectrums):
         self.check_inputs(spectrums)
         posteriors = 0.0
         for f in range(self.num_bins):
-            sigma_inv = self.R[f].I
-            sigma_det = np.linalg.det(self.R[f])
             for t in range(self.time_steps):
                 posteriors += self.lambda_[f, t] * gmm_posterior(spectrums[f, t], \
-                        self.phi[f, t], sigma_inv, sigma_det) 
+                        self.phi[f, t], self.sigma_inv[f], self.sigma_det[f]) 
         return posteriors
 
     def accu_stats(self, spectrums):
         self.check_inputs(spectrums)
         stats = np.zeros([self.num_bins, self.time_steps]).astype(np.complex)
         for f in range(self.num_bins):
-            sigma_inv = self.R[f].I
-            sigma_det = np.linalg.det(self.R[f])
             for t in range(self.time_steps):
                 stats[f, t] = gmm_posterior(spectrums[f, t], self.phi[f, t], \
-                        sigma_inv, sigma_det) 
+                        self.sigma_inv[f], self.sigma_det[f]) 
         return stats
 
     def update_lambda(self, spectrums, stats):
         print('update lambda...')
+        assert stats.shape == self.lambda_.shape
         for f in range(self.num_bins):
-            sigma_inv = self.R[f].I
-            sigma_det = np.linalg.det(self.R[f])
             for t in range(self.time_steps):
                 self.lambda_[f, t] = gmm_posterior(spectrums[f, t], self.phi[f, t], \
-                        sigma_inv, sigma_det) / stats[f, t]
+                        self.sigma_inv[f], self.sigma_det[f])
+        self.lambda_ = self.lambda_ / stats
 
-    def update_phi(self, spectrums):
+    def update_phi(self, covar):
         print('update phi...')
         for f in range(self.num_bins):
-            inv_R = self.R[f].I
             for t in range(self.time_steps):
-                y = np.matrix(spectrums[f, t])
-                self.phi[f, t] = np.trace(y.H * y * inv_R) / self.dim
+                self.phi[f, t] = np.trace(covar[f * self.time_steps + t] * self.sigma_inv[f])
+        self.phi = self.phi / self.dim
 
-    def update_R(self, spectrums):
+    def update_R(self, covar):
         print('update R...')
         for f in range(self.num_bins):
             sum_lambda = self.lambda_[f].sum()
-            self.R[f] = 0
+            R = np.matrix(np.zeros([self.dim, self.dim]).astype(np.complex))
             for t in range(self.time_steps):
-                y = np.matrix(spectrums[f, t])
-                self.R[f] += self.lambda_[f, t] * y.H * y / self.phi[f, t]
-            self.R[f] = self.R[f] / sum_lambda
+                R += self.lambda_[f, t] * covar[f * self.time_steps + t] / self.phi[f, t]
+            R = R / sum_lambda
+            self.sigma_inv[f] = R.I 
+            self.sigma_det[f] = np.linalg.det(R)
 
-    def update_parameters(self, spectrums, stats):
+    def update_parameters(self, spectrums, covar, stats):
         self.check_inputs(spectrums)
+        assert len(covar) == self.num_bins * self.time_steps and type(covar) == list
         self.update_lambda(spectrums, stats)
-        self.update_phi(spectrums)
-        self.update_R(spectrums)
+        self.update_phi(covar)
+        self.update_R(covar)
 
 class CGMMTrainer(object):
     def __init__(self, num_bins, time_steps, num_channels):
         self.noise_part = CGMM(num_bins, time_steps, num_channels)
         self.noisy_part = CGMM(num_bins, time_steps, num_channels)
         self.num_samples = num_bins * time_steps
-    
+
+    def init_sigma(self, spectrums):
+        # precompute the covariance matrix of each channel
+        print("initialize sigma...")
+        num_bins, time_steps, num_channels = spectrums.shape
+        self.covar = [y.H * y for y in [np.matrix(spectrums[f, t]) \
+                for f in range(num_bins) for t in range(time_steps)]]
+        self.noise_part.init_sigma([np.matrix(np.eye(num_channels, \
+                num_channels).astype(np.complex)) for f in range(num_bins)])
+        self.noisy_part.init_sigma([sum(self.covar[f * time_steps: \
+               (f + 1) * time_steps]) / time_steps for f in range(num_bins)])
+        
     def log_likelihood(self, spectrums):
         return (self.noise_part.log_likelihood(spectrums) + \
                 self.noisy_part.log_likelihood(spectrums)) / self.num_samples
@@ -125,14 +140,22 @@ class CGMMTrainer(object):
                 self.noise_part.accu_stats(spectrums)
     
     def update_parameters(self, spectrums, stats):
-        self.noise_part.update_parameters(spectrums, stats)
-        self.noisy_part.update_parameters(spectrums, stats)
+        self.noise_part.update_parameters(spectrums, self.covar, stats)
+        self.noisy_part.update_parameters(spectrums, self.covar, stats)
 
+    def save_param(self, dest):
+        sigma_ny = [mat.I for mat in self.noisy_part.sigma_inv]
+        sigma_ne = [mat.I for mat in self.noise_part.sigma_inv]
+        if not os.path.exists(dest):
+            os.mkdir(dest)
+        np.save(os.path.join(dest, 'sigma_noisy'), sigma_ny)
+        np.save(os.path.join(dest, 'sigma_noise'), sigma_ne)
+        
     def train(self, spectrums, iters=30):
+        self.init_sigma(spectrums)
         print('Likelihood: ({0.real:.5f}, {0.imag:.5f}i)'.format(self.log_likelihood(spectrums)))
         for it in range(1, iters + 1):
             stats = self.accu_stats(spectrums)
             self.update_parameters(spectrums, stats)
             print('epoch {0:2d}: Likelihood = ({1.real:.5f}, {1.imag:.5f}i)'.format(it, \
                     self.log_likelihood(spectrums)))
-

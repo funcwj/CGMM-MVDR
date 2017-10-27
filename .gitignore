@@ -1,6 +1,8 @@
 *.pyc
 *.log
 *.scp
+*.npy
+*.wav
 data/*.pyc
 __pycache__/
 6ch/

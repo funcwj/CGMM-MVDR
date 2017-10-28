@@ -56,6 +56,18 @@ class CGMM(object):
         self.sigma_inv = [mat.I for mat in sigma]
         self.sigma_det = [np.linalg.det(mat) for mat in sigma]
         
+    def covar_entropy(self):
+        """
+            Return entropy among eigenvalues of correlation matrix on 
+            each frequency bin.
+        """
+        entropy = []
+        for sigma_inv in self.sigma_inv:
+            egval, _ = np.linalg.eig(sigma_inv.I)
+            real_eigen = egval.real / egval.real.sum()
+            entropy.append(-(real_eigen * np.log(real_eigen)).sum())
+        return entropy
+
     def check_inputs(self, inputs):
         num_bins, time_steps, num_channels = inputs.shape
         assert num_bins == self.num_bins and time_steps == self.time_steps \
@@ -95,8 +107,8 @@ class CGMM(object):
                 self.phi[f, t] = np.trace(covar[f * self.time_steps + t] * self.sigma_inv[f])
         self.phi = self.phi / self.dim
 
-    def update_R(self, covar):
-        print('update R...')
+    def update_sigma(self, covar):
+        print('update sigma...')
         for f in range(self.num_bins):
             sum_lambda = self.lambda_[f].sum()
             R = np.matrix(np.zeros([self.dim, self.dim]).astype(np.complex))
@@ -111,13 +123,14 @@ class CGMM(object):
         assert len(covar) == self.num_bins * self.time_steps and type(covar) == list
         self.update_lambda(spectrums, stats)
         self.update_phi(covar)
-        self.update_R(covar)
+        self.update_sigma(covar)
 
 class CGMMTrainer(object):
     def __init__(self, num_bins, time_steps, num_channels):
         self.noise_part = CGMM(num_bins, time_steps, num_channels)
         self.noisy_part = CGMM(num_bins, time_steps, num_channels)
-        self.num_samples = num_bins * time_steps
+        self.num_bins   = num_bins
+        self.time_steps = time_steps
 
     def init_sigma(self, spectrums):
         # precompute the covariance matrix of each channel
@@ -127,12 +140,13 @@ class CGMMTrainer(object):
                 for f in range(num_bins) for t in range(time_steps)]]
         self.noise_part.init_sigma([np.matrix(np.eye(num_channels, \
                 num_channels).astype(np.complex)) for f in range(num_bins)])
+        # init noisy_part'R as correlation matrix of observed signal
         self.noisy_part.init_sigma([sum(self.covar[f * time_steps: \
-               (f + 1) * time_steps]) / time_steps for f in range(num_bins)])
+              (f + 1) * time_steps]) / time_steps for f in range(num_bins)])
         
     def log_likelihood(self, spectrums):
         return (self.noise_part.log_likelihood(spectrums) + \
-                self.noisy_part.log_likelihood(spectrums)) / self.num_samples
+                self.noisy_part.log_likelihood(spectrums)) / (self.num_bins * self.time_steps)
 
     def accu_stats(self, spectrums):
         print('accumulate statstics...')
@@ -143,13 +157,19 @@ class CGMMTrainer(object):
         self.noise_part.update_parameters(spectrums, self.covar, stats)
         self.noisy_part.update_parameters(spectrums, self.covar, stats)
 
+    def noise_lambda(self):
+        e_n = self.noise_part.covar_entropy()
+        e_y = self.noisy_part.covar_entropy()
+        lambda_ = []
+        for f in range(self.num_bins):
+           lambda_.append(self.noise_part.lambda_[f] if e_n[f] > e_y[f] else self.noisy_part.lambda_[f])
+        return np.array(lambda_)
+
     def save_param(self, dest):
-        sigma_ny = [mat.I for mat in self.noisy_part.sigma_inv]
-        sigma_ne = [mat.I for mat in self.noise_part.sigma_inv]
+        noise_lambda = self.noise_lambda()
         if not os.path.exists(dest):
             os.mkdir(dest)
-        np.save(os.path.join(dest, 'sigma_noisy'), sigma_ny)
-        np.save(os.path.join(dest, 'sigma_noise'), sigma_ne)
+        np.save(os.path.join(dest, 'noise_lambda'), noise_lambda)
         
     def train(self, spectrums, iters=30):
         self.init_sigma(spectrums)
@@ -159,3 +179,4 @@ class CGMMTrainer(object):
             self.update_parameters(spectrums, stats)
             print('epoch {0:2d}: Likelihood = ({1.real:.5f}, {1.imag:.5f}i)'.format(it, \
                     self.log_likelihood(spectrums)))
+

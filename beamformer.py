@@ -6,12 +6,11 @@ import numpy as np
 
 def main_egvec(mat):
     """
-        return the eigen vector as a estimate of steer vector, 
-        which has maximum eigen value
+        return the eigen vector which has maximum eigen value
     """
     assert mat.ndim == 2, "Input must be 2-dim matrix/ndarray"
     eigen_val, eigen_vec = np.linalg.eig(mat)
-    max_index = np.argsort(eigen_val)[-1]
+    max_index = np.argsort(eigen_val.real)[-1]
     return eigen_vec[max_index]
 
 def apply_mvdr(steer_vector, sigma_noise, spectrum_onbin):
@@ -32,3 +31,6 @@ def apply_mvdr(steer_vector, sigma_noise, spectrum_onbin):
     w = phi_inv * d / (d.H * phi_inv * d)
     s = w.H * y
     return s
+
+    
+    

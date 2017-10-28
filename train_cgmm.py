@@ -27,7 +27,7 @@ if __name__ == '__main__':
                         dest='iters', type=int, default='10',
                         help="""number of iterations to train""")
     parser.add_argument('-s', '--save',
-                        dest='save_dir', type=str, default='',
+                        dest='save_dir', type=str, default='.',
                         help="""directory to save sigma of CGMM""")
     args = parser.parse_args()
     train(args)

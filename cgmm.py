@@ -44,8 +44,9 @@ class CGMM(object):
         self.num_bins, self.time_steps = num_bins, time_steps
         self.dim = num_channels
         # lambda, phi, R for noisy/noise part
-        self.lambda_ = np.random.rand(num_bins, time_steps).astype(np.complex)
+        self.lambda_ = np.zeros([num_bins, time_steps]).astype(np.complex)
         self.phi     = np.ones([num_bins, time_steps]).astype(np.complex)
+        self.posterior = np.zeros([self.num_bins, self.time_steps]).astype(np.complex)
 
     def init_sigma(self, sigma):
         """
@@ -73,34 +74,50 @@ class CGMM(object):
         assert num_bins == self.num_bins and time_steps == self.time_steps \
             and num_channels == self.dim, 'Inputs dim does not match CGMM config'
 
-    def log_likelihood(self, spectrums):
-        self.check_inputs(spectrums)
-        posteriors = 0.0
-        for f in range(self.num_bins):
-            for t in range(self.time_steps):
-                posteriors += self.lambda_[f, t] * gmm_posterior(spectrums[f, t], \
-                        self.phi[f, t], self.sigma_inv[f], self.sigma_det[f]) 
-        return posteriors
+    # def log_likelihood(self, spectrums):
+    #     self.check_inputs(spectrums)
+    #     posteriors = 0.0
+    #     for f in range(self.num_bins):
+    #         for t in range(self.time_steps):
+    #             posteriors += self.lambda_[f, t] * gmm_posterior(spectrums[f, t], \
+    #                     self.phi[f, t], self.sigma_inv[f], self.sigma_det[f]) 
+    #     return posteriors
 
     def accu_stats(self, spectrums):
+        """
+            Return posteriors on each frequency bin(size: F x T), in order to use
+            them when updating lambda, we keep it as a class member
+            We can get log_likelihood(function Q: eq.9) from posterior(by sum and average)
+        """
         self.check_inputs(spectrums)
-        stats = np.zeros([self.num_bins, self.time_steps]).astype(np.complex)
+        # stats = np.zeros([self.num_bins, self.time_steps]).astype(np.complex)
         for f in range(self.num_bins):
             for t in range(self.time_steps):
-                stats[f, t] = gmm_posterior(spectrums[f, t], self.phi[f, t], \
+                self.posterior[f, t] = gmm_posterior(spectrums[f, t], self.phi[f, t], \
                         self.sigma_inv[f], self.sigma_det[f]) 
-        return stats
+        log_likelihood = (self.lambda_ * self.posterior).sum() / (self.num_bins * self.time_steps)
+        return self.posterior, log_likelihood
 
     def update_lambda(self, spectrums, stats):
+        """
+            stats: sum of stats returned by function accu_stats
+            update lambda: lambda = stats / \sum(stats) ref. eq.10
+            Here using self.posterior calculated in function accu_stats to accelerate
+            training progress.
+        """
         print('update lambda...')
-        assert stats.shape == self.lambda_.shape
-        for f in range(self.num_bins):
-            for t in range(self.time_steps):
-                self.lambda_[f, t] = gmm_posterior(spectrums[f, t], self.phi[f, t], \
-                        self.sigma_inv[f], self.sigma_det[f])
-        self.lambda_ = self.lambda_ / stats
+        assert stats.shape == self.posterior.shape
+        # delete: avoid duplicated computation
+        # for f in range(self.num_bins):
+        #     for t in range(self.time_steps):
+        #         self.lambda_[f, t] = gmm_posterior(spectrums[f, t], self.phi[f, t], \
+        #                 self.sigma_inv[f], self.sigma_det[f])
+        self.lambda_ = self.posterior / stats
 
     def update_phi(self, covar):
+        """
+            Update phi: ref. eq.9
+        """
         print('update phi...')
         for f in range(self.num_bins):
             for t in range(self.time_steps):
@@ -108,6 +125,9 @@ class CGMM(object):
         self.phi = self.phi / self.dim
 
     def update_sigma(self, covar):
+        """
+            Update R: ref. eq.12
+        """
         print('update sigma...')
         for f in range(self.num_bins):
             sum_lambda = self.lambda_[f].sum()
@@ -119,6 +139,12 @@ class CGMM(object):
             self.sigma_det[f] = np.linalg.det(R)
 
     def update_parameters(self, spectrums, covar, stats):
+        """
+            spectrums:  multi-channel training data(size: F x T x M)
+            covar:      a python list, each item is a precomputed correlation matrix(y * y^H, 
+                        type: np.matrix), we did it to avoid duplicate computing
+            stats:      sum of stats in each CGMM part
+        """
         self.check_inputs(spectrums)
         assert len(covar) == self.num_bins * self.time_steps and type(covar) == list
         self.update_lambda(spectrums, stats)
@@ -133,25 +159,28 @@ class CGMMTrainer(object):
         self.time_steps = time_steps
 
     def init_sigma(self, spectrums):
-        # precompute the covariance matrix of each channel
+        """
+            covar: precomputed correlation matrix of each channel
+            Here we init noisy_part'R as correlation matrix of observed signal
+        """
         print("initialize sigma...")
         num_bins, time_steps, num_channels = spectrums.shape
         self.covar = [y.H * y for y in [np.matrix(spectrums[f, t]) \
                 for f in range(num_bins) for t in range(time_steps)]]
         self.noise_part.init_sigma([np.matrix(np.eye(num_channels, \
                 num_channels).astype(np.complex)) for f in range(num_bins)])
-        # init noisy_part'R as correlation matrix of observed signal
         self.noisy_part.init_sigma([sum(self.covar[f * time_steps: \
               (f + 1) * time_steps]) / time_steps for f in range(num_bins)])
         
-    def log_likelihood(self, spectrums):
-        return (self.noise_part.log_likelihood(spectrums) + \
-                self.noisy_part.log_likelihood(spectrums)) / (self.num_bins * self.time_steps)
+    # def log_likelihood(self, spectrums):
+    #     return (self.noise_part.log_likelihood(spectrums) + \
+    #             self.noisy_part.log_likelihood(spectrums)) / (self.num_bins * self.time_steps)
 
     def accu_stats(self, spectrums):
         print('accumulate statstics...')
-        return self.noisy_part.accu_stats(spectrums) + \
-                self.noise_part.accu_stats(spectrums)
+        stats_y, post_y = self.noisy_part.accu_stats(spectrums)
+        stats_n, post_n = self.noise_part.accu_stats(spectrums)
+        return stats_y + stats_n, post_y + post_n
     
     def update_parameters(self, spectrums, stats):
         self.noise_part.update_parameters(spectrums, self.covar, stats)
@@ -173,10 +202,10 @@ class CGMMTrainer(object):
         
     def train(self, spectrums, iters=30):
         self.init_sigma(spectrums)
-        print('Likelihood: ({0.real:.5f}, {0.imag:.5f}i)'.format(self.log_likelihood(spectrums)))
+        stats, likelihood = self.accu_stats(spectrums)
+        print('Likelihood: ({0.real:.5f}, {0.imag:.5f}i)'.format(likelihood))
         for it in range(1, iters + 1):
-            stats = self.accu_stats(spectrums)
             self.update_parameters(spectrums, stats)
-            print('epoch {0:2d}: Likelihood = ({1.real:.5f}, {1.imag:.5f}i)'.format(it, \
-                    self.log_likelihood(spectrums)))
+            stats, likelihood = self.accu_stats(spectrums)
+            print('epoch {0:2d}: Likelihood = ({1.real:.5f}, {1.imag:.5f}i)'.format(it, likelihood))
 

@@ -203,7 +203,6 @@ class CGMMTrainer(object):
     def train(self, spectrums, iters=30):
         self.init_sigma(spectrums)
         stats, likelihood = self.accu_stats(spectrums)
-        print('Likelihood: ({0.real:.5f}, {0.imag:.5f}i)'.format(likelihood))
         for it in range(1, iters + 1):
             self.update_parameters(spectrums, stats)
             stats, likelihood = self.accu_stats(spectrums)

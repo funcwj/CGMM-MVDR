@@ -13,12 +13,14 @@ instead of baseline `local/run_beamform_6ch_track.sh` commands.
 ### Results
 * 6ch
 
-| Methods | dev-simu | dev-real | eval-simu | eval-real | avg |
-|  :---:  |  :---:   |   :---:  |   :---:   |   :---:   | :---: |
-|Beamformit(SAT)| 14.36%  | 12.99%   | 21.24%    | 21.55%    |  13.68%  |
-|  CGMM(SAT)    | 12.65%  | 11.39%   | 20.18%    | 19.72%    |  12.02%  |
-
-
+| Methods | dev-simu | dev-real | eval-simu | eval-real |
+|  :---:  |  :---:   |   :---:  |   :---:   |   :---:   |
+|Beamformit(SAT)| 14.36%  | 12.99%   | 21.24%    | 21.55%    |
+|  CGMM(SAT)    | 12.65%  | 11.39%   | 20.18%    | 19.72%    |
+|Beamformit(DNN)| 10.29%  | 9.59%   | 15.79%    | 16.73%    |
+| CGMM(DNN) | 8.76%  | 8.60%   | 15.23%    | 15.18%    |
+| Beamformit(DNN + sMBR) | 9.11%  | 8.46%   | 14.54%    | 15.07%    |
+|  CGMM(DNN + sMBR)    | 7.96%  | 7.61%   | 14.47%    | 14.05%    |
 
 
 ### Reference

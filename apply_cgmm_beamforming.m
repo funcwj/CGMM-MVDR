@@ -3,11 +3,11 @@ function apply_cgmm_beamforming(prefix, output, iters)
 %  Apply MVDR based on mask estimated by CGMM
 
 if nargin < 1 || nargin > 3
-    error('format error: apply_cgmm_beamforming(prefix, output, [iters = 10])');
+    error('format error: apply_cgmm_beamforming(prefix, output, [iters = 20])');
 end
 
 if nargin <= 2
-    iters = 10;
+    iters = 20;
 end
 
 if nargin == 1
@@ -21,13 +21,14 @@ num_channels = 6;
 num_iters    = iters;
 frame_length = 400;
 fft_length   = 512;
-frame_shift  = 160;
+frame_shift  = 100;
 theta        = 10^-4;
-hamming_wnd  = hamming(frame_length, 'periodic');
+% hamming_wnd  = hamming(frame_length, 'periodic');
+hanning_wnd  = hanning(frame_length, 'periodic');
 
 for c = 1: num_channels
-    samples = audioread([prefix int2str(c) '.wav']);
-    frames  = enframe(samples, hamming_wnd, frame_shift);
+    samples = audioread([prefix '.CH' int2str(c) '.wav']);
+    frames  = enframe(samples, hanning_wnd, frame_shift);
     frames_size = size(frames);
     frames_padding = zeros(frames_size(1), fft_length);
     frames_padding(:, 1: frame_length) = frames;
@@ -45,6 +46,7 @@ phi_noise    = ones(num_frames, num_bins);
 phi_noisy    = ones(num_frames, num_bins);
 R_noise      = zeros(num_channels, num_channels, num_bins);
 R_noisy      = zeros(num_channels, num_channels, num_bins);
+R_xn         = zeros(num_channels, num_channels, num_bins);
 
 
 yyh = zeros(num_channels, num_channels, num_frames, num_bins);
@@ -61,9 +63,11 @@ for f = 1: num_bins
     R_noise(:, :, f) = eye(num_channels, num_channels);
 end
 
+R_xn = R_noisy;
+
 % start CGMM training
-p_noise = zeros(num_frames, num_bins);
-p_noisy = zeros(num_frames, num_bins);
+p_noise = ones(num_frames, num_bins);
+p_noisy = ones(num_frames, num_bins);
 
 for iter = 1: num_iters
 
@@ -72,11 +76,11 @@ for iter = 1: num_iters
         R_noise_onbin = R_noise(:, :, f);
         
         if rcond(R_noisy_onbin) < theta
-            R_noisy_onbin = R_noisy_onbin + rand(num_channels) * theta;
+            R_noisy_onbin = R_noisy_onbin + theta * eye(num_channels) * max(diag(R_noisy_onbin));
         end
         
         if rcond(R_noise_onbin) < theta
-            R_noise_onbin = R_noise_onbin + rand(num_channels) * theta;
+            R_noise_onbin = R_noise_onbin + theta * eye(num_channels) * max(diag(R_noisy_onbin));
         end
        
         R_noisy_inv = inv(R_noisy_onbin);
@@ -91,7 +95,7 @@ for iter = 1: num_iters
             % update phi
             phi_noise(t, f) = trace(corre * R_noise_inv) / num_channels;
             phi_noisy(t, f) = trace(corre * R_noisy_inv) / num_channels;
-           
+            
             % update lambda
             k_noise = obs' * (R_noise_inv / phi_noise(t, f)) * obs;
             p_noise(t, f) = exp(-k_noise) / (pi * det(phi_noise(t, f) * R_noise_onbin));
@@ -108,20 +112,22 @@ for iter = 1: num_iters
         R_noise(:, :, f) = R_noise_accu / sum(lambda_noise(:, f));
         R_noisy(:, :, f) = R_noisy_accu / sum(lambda_noisy(:, f));
         
-        % bigger entropy assigned to noise part
-        eig_value1 = eig(R_noise(:, :, f));
-        eig_value2 = eig(R_noisy(:, :, f));
-        en_noise = -eig_value1' / sum(eig_value1) * log(eig_value1 / sum(eig_value1));
-        en_noisy = -eig_value2' / sum(eig_value2) * log(eig_value2 / sum(eig_value2));
-        
-        if en_noise < en_noisy
-            Rn = R_noise(:, :, f);
-            R_noise(:, :, f) = R_noisy(:, :, f);
-            R_noisy(:, :, f) = Rn;
-        end
-        
     end
-    Q = sum(sum(lambda_noise .* log(p_noise) + lambda_noisy .* log(p_noisy))) / (num_frames * num_bins)
+    % Q = sum(sum(lambda_noise .* log(p_noise) + lambda_noisy .* log(p_noisy))) / (num_frames * num_bins)
+end
+
+% bigger entropy assigned to noise part
+for f = 1: num_bins
+    eig_value1 = eig(R_noise(:, :, f));
+    eig_value2 = eig(R_noisy(:, :, f));
+    en_noise = -eig_value1' / sum(eig_value1) * log(eig_value1 / sum(eig_value1));
+    en_noisy = -eig_value2' / sum(eig_value2) * log(eig_value2 / sum(eig_value2));
+    
+    if en_noise < en_noisy
+        Rn = R_noise(:, :, f);
+        R_noise(:, :, f) = R_noisy(:, :, f);
+        R_noisy(:, :, f) = Rn;
+    end
 end
 
 % get Rn, reference to eq.4
@@ -133,7 +139,7 @@ for f = 1: num_bins
     R_n(:, :, f) = R_n(:, :, f) / sum(lambda_noise(:, f));
 end
 
-R_x = R_noisy - R_n;
+R_x = R_xn - R_n;
 
 % apply MVDR beamforming
 
@@ -154,7 +160,7 @@ end
 % reconstruction
 frames_enhan = irfft(specs_enhan, fft_length, 2);
 % size(frames_enhan)
-signal_enhan = overlapadd(frames_enhan(:, 1: frame_length), hamming_wnd, frame_shift);
+signal_enhan = overlapadd(frames_enhan(:, 1: frame_length), hanning_wnd, frame_shift);
 audiowrite([output '.wav'], signal_enhan ./ max(abs(signal_enhan)), 16000);
 
 end

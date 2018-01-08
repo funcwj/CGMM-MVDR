@@ -3,6 +3,7 @@
 *.scp
 *.npy
 *.wav
+*.mat
 data/*.pyc
 __pycache__/
 6ch/

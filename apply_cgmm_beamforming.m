@@ -23,6 +23,7 @@ frame_length = 1024;
 fft_length   = 1024;
 frame_shift  = 256;
 theta        = 10^-4;
+beta         = 10^-6;
 % hamming_wnd  = hamming(frame_length, 'periodic');
 hanning_wnd  = hanning(frame_length, 'periodic');
 
@@ -79,12 +80,14 @@ for iter = 1: num_iters
         
         if rcond(R_noisy_onbin) < theta
             % R_noisy_onbin = R_noisy_onbin + theta * eye(num_channels) * max(diag(R_noisy_onbin));
-            R_noisy_onbin = R_noisy_onbin + theta * eye(num_channels);
+            R_noisy_onbin = R_noisy_onbin + beta * eye(num_channels);
+            % fprintf('WARNING: ILL-CONDITION\n');
         end
         
         if rcond(R_noise_onbin) < theta
             % R_noise_onbin = R_noise_onbin + theta * eye(num_channels) * max(diag(R_noise_onbin));
-            R_noise_onbin = R_noise_onbin + theta * eye(num_channels);
+            R_noise_onbin = R_noise_onbin + beta * eye(num_channels);
+            % fprintf('WARNING: ILL-CONDITION\n');
         end
        
         R_noisy_inv = inv(R_noisy_onbin);
@@ -102,9 +105,13 @@ for iter = 1: num_iters
             
             % update lambda
             k_noise = obs' * (R_noise_inv / phi_noise(t, f)) * obs / 2;
-            p_noise(t, f) = exp(-k_noise) / sqrt(det(phi_noise(t, f) * R_noise_onbin));
+            det_noise = det(phi_noise(t, f) * R_noise_onbin);
+
+            p_noise(t, f) = exp(-k_noise) / sqrt(det_noise);
             k_noisy = obs' * (R_noisy_inv / phi_noisy(t, f)) * obs / 2;
-            p_noisy(t, f) = exp(-k_noisy) / sqrt(det(phi_noisy(t, f) * R_noisy_onbin));
+            det_noisy = det(phi_noisy(t, f) * R_noisy_onbin);
+
+            p_noisy(t, f) = exp(-k_noisy) / sqrt(det_noisy);
             lambda_noise(t, f) = p_noise(t, f) / (p_noise(t, f) + p_noisy(t, f));
             lambda_noisy(t, f) = p_noisy(t, f) / (p_noise(t, f) + p_noisy(t, f));
             %{
@@ -161,6 +168,11 @@ for f = 1: num_bins
     [vector, value] = eig(R_x(:, :, f));
     steer_vector = vector(:, 1);
     
+    if rcond(R_noisy_onbin) < theta
+        R_n(:, :, f) = R_n(:, :, f) + beta * eye(num_channels);
+        % fprintf('WARNING: ILL-CONDITION\n');
+    end
+    
     % feed Rn into MVDR
     Rn_inv = inv(R_n(:, :, f));
     % w: M x 1
@@ -175,8 +187,8 @@ frames_enhan = irfft(specs_enhan, fft_length, 2);
 signal_enhan = overlapadd(frames_enhan(:, 1: frame_length), hanning_wnd, frame_shift);
 audiowrite([output '.wav'], signal_enhan ./ max(abs(signal_enhan)), 16000);
 
-lambda_noise_r = real(lambda_noise) + theta;
-lambda_noisy_r = real(lambda_noisy) + theta;
+lambda_noise_r = real(lambda_noise);
+lambda_noisy_r = real(lambda_noisy);
 
 [p, name, s] = fileparts(prefix);
 save([name '.mat'], 'lambda_noise_r', 'lambda_noisy_r');

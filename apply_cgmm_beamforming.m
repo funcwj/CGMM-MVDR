@@ -168,15 +168,17 @@ for f = 1: num_bins
     [vector, value] = eig(R_x(:, :, f));
     steer_vector = vector(:, 1);
     
-    if rcond(R_noisy_onbin) < theta
+    if rcond(R_n(:, :, f)) < theta
         R_n(:, :, f) = R_n(:, :, f) + beta * eye(num_channels);
         % fprintf('WARNING: ILL-CONDITION\n');
     end
     
     % feed Rn into MVDR
-    Rn_inv = inv(R_n(:, :, f));
+    % Rn_inv = inv(R_n(:, :, f));
     % w: M x 1
-    w = Rn_inv * steer_vector / (steer_vector' * Rn_inv * steer_vector);
+    % w = Rn_inv * steer_vector / (steer_vector' * Rn_inv * steer_vector);
+    numerator = R_n(:, :, f) \ steer_vector;
+    w = numerator / (steer_vector' * numerator);
     % specs M x T x F
     specs_enhan(:, f) = w' * specs(:, :, f);
 end

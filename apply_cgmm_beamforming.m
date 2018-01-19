@@ -114,11 +114,7 @@ for iter = 1: num_iters
             p_noisy(t, f) = exp(-k_noisy) / sqrt(det_noisy);
             lambda_noise(t, f) = p_noise(t, f) / (p_noise(t, f) + p_noisy(t, f));
             lambda_noisy(t, f) = p_noisy(t, f) / (p_noise(t, f) + p_noisy(t, f));
-            %{
-            if isnan(lambda_noise(t, f)) || isnan(lambda_noisy(t, f))
-                fprintf('NAN existed in (%d, %d)\n', t, f);
-            end
-            %}
+
             % accu R
             R_noise_accu = R_noise_accu + lambda_noise(t, f) / phi_noise(t, f) * corre;
             R_noisy_accu = R_noisy_accu + lambda_noisy(t, f) / phi_noisy(t, f) * corre;
@@ -133,7 +129,8 @@ for iter = 1: num_iters
 end
 
 % bigger entropy assigned to noise part
-
+% seems no use
+%{
 for f = 1: num_bins
     eig_value1 = eig(R_noise(:, :, f));
     eig_value2 = eig(R_noisy(:, :, f));
@@ -146,6 +143,7 @@ for f = 1: num_bins
         R_noisy(:, :, f) = Rn;
     end
 end
+%}
 
 
 % get Rn, reference to eq.4
@@ -187,12 +185,8 @@ end
 frames_enhan = irfft(specs_enhan, fft_length, 2);
 % size(frames_enhan)
 signal_enhan = overlapadd(frames_enhan(:, 1: frame_length), hanning_wnd, frame_shift);
-audiowrite([output '.wav'], signal_enhan ./ max(abs(signal_enhan)), 16000);
+audiowrite([output '.wav'], signal_enhan ./ norm(signal_enhan, inf), 16000);
 
-lambda_noise_r = real(lambda_noise);
-lambda_noisy_r = real(lambda_noisy);
-
-[p, name, s] = fileparts(prefix);
-save([name '.mat'], 'lambda_noise_r', 'lambda_noisy_r');
+save([output '.mat'], 'lambda_noise');
 end
 

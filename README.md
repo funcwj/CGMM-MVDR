@@ -2,13 +2,15 @@
 
 The python version of scripts now perfermance badly(may have some logical errors), please refer to `apply_cgmm_beamforming.m`, which works ok.
 
-### Usage
+Update: Newest version in [cgmm-mask-estimator](https://github.com/funcwj/cgmm-mask-estimator)
 
-copy `run_cgmm_beamforming.sh` and `apply_cgmm_beamforming.m` to `local/`, then run
+### Usage
+install [voicebox](http://www.ee.ic.ac.uk/hp/staff/dmb/voicebox/voicebox.html) for MATLAB first.
+
+copy `run_cgmm_beamforming.sh` and `apply_cgmm_beamforming.m` to `local/`, then run followings instead of baseline `local/run_beamform_6ch_track.sh` commands
 ```shell
 local/run_cgmm_beamforming.sh --nj 15 $chime4_data/data/audio/16kHz/isolated_6ch_track/ $enhancement_data
 ```
-instead of baseline `local/run_beamform_6ch_track.sh` commands.
 
 ### Results
 * 6ch

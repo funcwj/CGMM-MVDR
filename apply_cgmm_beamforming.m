@@ -163,7 +163,7 @@ specs_enhan = zeros(num_frames, num_bins);
 
 for f = 1: num_bins
     % using Rx to estimate steer vector
-    [vector, value] = eig(R_x(:, :, f));
+    [vector, ~, ~] = svd(R_x(:, :, f));
     steer_vector = vector(:, 1);
     
     if rcond(R_n(:, :, f)) < theta
